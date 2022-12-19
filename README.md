@@ -10,5 +10,5 @@ uvicorn ground_data_service.main:app --port 8000 --reload
 
 ## Notes
 Currently, the measurements are not accessed.
-Therefore a substitution "ground_measurements.csv" has to be created using the Jupyter-Notebook `sensor_data_generator.ipynb`. The data is then moved into a `data/` folder under this modules' root directory.
+Therefore a substitution `ground_measurements.csv` has to be created using the Jupyter-Notebook `sensor_data_generator.ipynb`. The data is then moved into a `data/` folder under this modules' root directory.
 To keep the repository clean and due to generated data being negligible in the future, this data is not included.
