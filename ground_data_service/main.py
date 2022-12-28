@@ -1,13 +1,15 @@
-import pandas as pd
-import geopandas as gpd
 import datetime
-import logging
 import json
-from fastapi import FastAPI, APIRouter
-from fastapi.responses import JSONResponse
-from aimlsse_api.ground_data_access import GroundDataAccess
+import logging
 
-class GroundDataAccessor(GroundDataAccess):
+import geopandas as gpd
+import pandas as pd
+from aimlsse_api.interface import GroundDataAccess
+from fastapi import APIRouter, FastAPI
+from fastapi.responses import JSONResponse
+
+
+class GroundDataService(GroundDataAccess):
     def __init__(self) -> None:
         super().__init__()
         # Setup a router for FastAPI
@@ -31,5 +33,5 @@ class GroundDataAccessor(GroundDataAccess):
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
-groundDataAccessor = GroundDataAccessor()
-app.include_router(groundDataAccessor.router)
+groundDataService = GroundDataService()
+app.include_router(groundDataService.router)
