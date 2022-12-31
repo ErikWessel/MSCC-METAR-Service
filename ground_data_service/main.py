@@ -1,12 +1,16 @@
 import datetime
 import json
 import logging
+import os
 
 import geopandas as gpd
 import pandas as pd
+import yaml
 from aimlsse_api.interface import GroundDataAccess
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import JSONResponse
+
+from . import GroundDataFaker
 
 
 class GroundDataService(GroundDataAccess):
@@ -15,11 +19,16 @@ class GroundDataService(GroundDataAccess):
         # Setup a router for FastAPI
         self.router = APIRouter()
         self.router.add_api_route('/queryMeasurements', self.queryMeasurements, methods=['GET'])
+        config = yaml.safe_load(open('config.yml'))
+        self.data_path = config['data']['filepath']
     
     async def queryMeasurements(self, datetime_from:datetime.datetime, datetime_to:datetime.datetime) -> JSONResponse:
         # Placeholder implementation until actual data-access becomes available
         logging.info('Querying for measurements..')
-        measurements = pd.read_csv('data/ground_measurements.csv')
+        if not os.path.exists(self.data_path):
+            faker = GroundDataFaker()
+            faker.generateMeasurements(datetime_from, datetime_to, self.data_path)
+        measurements = pd.read_csv(self.data_path)
         logging.info('Preprocessing measurements..')
         measurements = measurements[measurements.date.between(str(datetime_from), str(datetime_to))]
         measurements['geometry'] = gpd.points_from_xy(measurements.longitude, measurements.latitude)
