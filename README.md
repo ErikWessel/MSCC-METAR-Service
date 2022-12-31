@@ -1,14 +1,18 @@
 # Ground Data Service
 This service provides access to measurement-data of sensors on the earth.
 
-## How to run
-For now, this remains a manual task.
-To start the service navigate into the root directory of this repository and enter the following command into a terminal
+## Setup
+When not running this service via docker compose like in [AIMLESS](https://git.scc.kit.edu/master-thesis-ai-ml-based-support-for-satellite-exploration/aimlsse), first create a volume:
 ```
-uvicorn ground_data_service.main:app --port 8000 --reload
+docker volume create --name ground-data-storage
 ```
+Then run the container and use the volume:
+```
+docker run -d -p 8000:8000 -v ground-data-storage:/aimlsse/app/data ground-data-service
+```
+Here `/aimlsse/app/` is the working directory of the service, while `data` is the subdirectory for the data that is specified in the `config.yml` file.
+If the path in the config is changed, update the container-side binding of the volume in the command above as well.
 
 ## Notes
-Currently, the measurements are not accessed.
-Therefore a substitution `ground_measurements.csv` has to be created using the Jupyter-Notebook `sensor_data_generator.ipynb`. The data is then moved into a `data/` folder under this modules' root directory.
+Currently, the real measurements are not accessed. The data is automatically generated when needed.
 To keep the repository clean and due to generated data being negligible in the future, this data is not included.
