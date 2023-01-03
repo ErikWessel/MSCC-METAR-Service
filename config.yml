@@ -1,2 +1,9 @@
 data:
   filepath: "data/ground_measurements.csv"
+metar-data:
+  dirpath: "data/METAR/"
+  download-url: "https://tgftp.nws.noaa.gov/data/observations/metar/stations/"
+  file-extension: ".TXT"
+airport-data:
+  filepath: "data/airports/airports.csv"
+  download-url: "https://davidmegginson.github.io/ourairports-data/airports.csv"

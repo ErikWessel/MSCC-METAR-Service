@@ -10,7 +10,7 @@ from aimlsse_api.interface import GroundDataAccess
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import JSONResponse
 
-from . import GroundDataFaker
+from . import GroundDataFaker, MetarDataProvider
 
 
 class GroundDataService(GroundDataAccess):
@@ -19,6 +19,8 @@ class GroundDataService(GroundDataAccess):
         # Setup a router for FastAPI
         self.router = APIRouter()
         self.router.add_api_route('/queryMeasurements', self.queryMeasurements, methods=['GET'])
+        self.router.add_api_route('/queryMetar', self.queryMetar, methods=['GET'])
+
         config = yaml.safe_load(open('config.yml'))
         self.data_path = config['data']['filepath']
     
@@ -39,6 +41,9 @@ class GroundDataService(GroundDataAccess):
         # An additional wrapper to json-type has to be added to ensure a working API!
         # Make sure to check if the return type of an HTTP-Request is of type dict.
         return JSONResponse(json.loads(sensor_locations.to_json(drop_id=True)))
+    
+    async def queryMetar(self, airport_id:str):
+        return MetarDataProvider().query(airport_id)
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
