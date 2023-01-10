@@ -1,9 +1,15 @@
 data:
   filepath: "data/ground_measurements.csv"
-metar-data:
-  dirpath: "data/METAR/"
-  download-url: "https://tgftp.nws.noaa.gov/data/observations/metar/stations/"
-  file-extension: ".TXT"
-airport-data:
+metar:
+  filepath: "data/METAR/asos.csv"
+  download-url: "http://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?"
+database:
+  technology: "postgresql"
+  name: "database"
+  username: "username"
+  password: "password"
+  host: "ground-db"
+  port: 5432
+station-data:
   filepath: "data/airports/airports.csv"
   download-url: "https://davidmegginson.github.io/ourairports-data/airports.csv"

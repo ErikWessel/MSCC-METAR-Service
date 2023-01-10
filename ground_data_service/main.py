@@ -1,7 +1,8 @@
-import datetime
 import json
 import logging
 import os
+from datetime import date, datetime
+from typing import List
 
 import geopandas as gpd
 import pandas as pd
@@ -19,12 +20,12 @@ class GroundDataService(GroundDataAccess):
         # Setup a router for FastAPI
         self.router = APIRouter()
         self.router.add_api_route('/queryMeasurements', self.queryMeasurements, methods=['GET'])
-        self.router.add_api_route('/queryMetar', self.queryMetar, methods=['GET'])
+        self.router.add_api_route('/queryMetar', self.queryMetar, methods=['POST'])
 
         config = yaml.safe_load(open('config.yml'))
         self.data_path = config['data']['filepath']
     
-    async def queryMeasurements(self, datetime_from:datetime.datetime, datetime_to:datetime.datetime) -> JSONResponse:
+    async def queryMeasurements(self, datetime_from:datetime, datetime_to:datetime) -> JSONResponse:
         # Placeholder implementation until actual data-access becomes available
         logging.info('Querying for measurements..')
         if not os.path.exists(self.data_path):
@@ -42,8 +43,8 @@ class GroundDataService(GroundDataAccess):
         # Make sure to check if the return type of an HTTP-Request is of type dict.
         return JSONResponse(json.loads(sensor_locations.to_json(drop_id=True)))
     
-    async def queryMetar(self, airport_id:str):
-        return MetarDataProvider().query(airport_id)
+    async def queryMetar(self, stations:List[str], date_from:date, date_to:date):
+        return JSONResponse(MetarDataProvider().query(stations, date_from, date_to))
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
