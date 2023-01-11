@@ -1,6 +1,11 @@
 fastapi>=0.88.0
 geopandas>=0.12.2
+metar-taf-parser-mivek>=1.6.1
 numpy==1.24.0
 pandas>=1.5.2
 PyYAML>=6.0
+SQLAlchemy>=2.0.0rc1
 uvicorn>=0.20.0
+
+# Database adapter [POSTGRESQL]
+psycopg2-binary>=2.9.5
