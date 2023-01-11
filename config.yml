@@ -1,5 +1,3 @@
-data:
-  filepath: "data/ground_measurements.csv"
 metar:
   filepath: "data/METAR/asos.csv"
   download-url: "http://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?"

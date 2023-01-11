@@ -66,7 +66,7 @@ class MetarDataProvider:
         data['datetime'] = pd.to_datetime(data['datetime'])
         return data
     
-    def query_data(self, stations:List[str], date_from:date, date_to:date) -> Dict[str, Dict[str, str]]:
+    def query_data(self, stations:List[str], date_from:date, date_to:date) -> pd.DataFrame:
         self.logger.info(f'Querying data for stations {stations}\n from {date_from} until {date_to}')
         metar_data = None
         with orm.Session(self.db_engine) as session:
@@ -80,11 +80,8 @@ class MetarDataProvider:
             metar_data: db.engine.result.ChunkedIteratorResult = session.execute(stmt)
         # Format output
         self.logger.debug(f'Queried METAR data type: {type(metar_data)}')
-        result: Dict[str, Dict[str, str]] = {}
-        for station in stations:
-            result[station] = {}
-        for station, datetime_observation, metar in metar_data.tuples():
-            result[station][str(datetime_observation)] = metar
+        result = pd.DataFrame(metar_data.all())
+        result.columns = ['station', 'datetime', 'metar']
         self.logger.debug(f'Result of query:\n{result}')
         self.logger.info('Query for data of stations complete')
         return result
@@ -115,7 +112,7 @@ class MetarDataProvider:
         self.logger.info('Query for datetimes of stations complete')
         return result
 
-    def query(self, stations:List[str], date_from:date, date_to:date) -> Dict[str, Dict[str, str]]:
+    def query(self, stations:List[str], date_from:date, date_to:date) -> pd.DataFrame:
         time_start = time.perf_counter()
         stations = StationControl().prepare_stations_for_processing(stations)
         # Create index of what date-range is requested, to be able to use the difference() function
@@ -175,6 +172,8 @@ class MetarDataProvider:
         # Finally, query the actual data
         self.logger.info(f'Querying data from database..')
         data = self.query_data(stations, date_from, date_to)
+        printable_subset = data[['station', 'datetime']]
+        self.logger.debug(f'Data queried (only station and datetime):\n{printable_subset}')
         time_end = time.perf_counter()
         self.logger.info(f'Query took {time_end - time_start} seconds')
         return data
