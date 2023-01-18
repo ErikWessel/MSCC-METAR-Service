@@ -31,6 +31,16 @@ class StationControl:
             os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
             # Data not in local storage - try to download
             self.download_data()
+        
+        # Apply conversions of column names and units of measurement
+        StationControl.__data.rename(columns={
+                'ident': 'station',
+                'latitude_deg': 'latitude',
+                'longitude_deg': 'longitude'
+            }, inplace=True)
+        # Elevation in meters from feet
+        StationControl.__data['elevation_ft'] = StationControl.__data['elevation_ft'].apply(lambda x: x * 0.3048)
+        StationControl.__data.rename(columns={'elevation_ft': 'elevation'}, inplace=True)
 
     def get_data(self):
         if StationControl.__data is None:
@@ -39,7 +49,7 @@ class StationControl:
 
     def exists(self, station:str):
         data = self.get_data()
-        return station in data['ident'].values
+        return station in data['station'].values
     
     def verify_stations(self, stations:List[str]):
         if not stations:
@@ -61,3 +71,8 @@ class StationControl:
         stations = self.format_stations(stations)
         self.verify_stations(stations)
         return stations
+
+    def get_positional_data(self, stations:List[str]) -> pd.DataFrame:
+        data = self.get_data()
+        data = data[['station', 'latitude', 'longitude', 'elevation']]
+        return data.loc[data['station'].isin(stations)]
