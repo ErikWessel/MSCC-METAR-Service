@@ -20,7 +20,7 @@ class GroundDataService(GroundDataAccess):
         self.router.add_api_route('/queryPosition', self.queryPosition, methods=['POST'])
     
     async def queryMetar(self, data:dict, date_from:date, date_to:date):
-        self.validate_json_parameters(['stations', 'properties'])
+        self.validate_json_parameters(data, ['stations', 'properties'])
         stations: List[str] = data['stations']
         property_strings: List[str] = data['properties']
         properties = [MetarProperty.from_string(prop_str) for prop_str in property_strings]
