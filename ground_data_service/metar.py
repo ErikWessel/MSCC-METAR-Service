@@ -1,4 +1,3 @@
-import csv
 import logging
 import time
 from datetime import date, datetime
@@ -9,8 +8,10 @@ import pandas as pd
 import sqlalchemy as db
 import sqlalchemy.orm as orm
 import yaml
+from aimlsse_api.data.metar import *
+from metar import Metar
 
-from . import DateChunker, IowaMetarDownloader, StationControl
+from . import DateChunker, IowaMetarDownloader, StationControl, MetarWrapper
 
 
 class DatabaseConfig:
@@ -112,7 +113,17 @@ class MetarDataProvider:
         self.logger.info('Query for datetimes of stations complete')
         return result
 
-    def query(self, stations:List[str], date_from:date, date_to:date) -> pd.DataFrame:
+    def decode_metar(self, metar_data:str, obs_datetime:datetime) -> Metar.Metar:
+        try:
+            result = Metar.Metar(metar_data, month=obs_datetime.month, year=obs_datetime.year)
+        except Metar.ParserError:
+            result = None
+        return result
+
+    def unfoldMetar(self, metar:Metar.Metar, properties:List[MetarProperty]):
+        return pd.Series(MetarWrapper(metar).get(properties))
+
+    def query(self, stations:List[str], date_from:date, date_to:date, properties:List[MetarProperty]) -> pd.DataFrame:
         time_start = time.perf_counter()
         stations = StationControl().prepare_stations_for_processing(stations)
         # Create index of what date-range is requested, to be able to use the difference() function
@@ -169,11 +180,32 @@ class MetarDataProvider:
         else:
             self.logger.info(f'All data available!')
 
-        # Finally, query the actual data
+        # Query the actual data
         self.logger.info(f'Querying data from database..')
         data = self.query_data(stations, date_from, date_to)
+
+        # Decode METAR and get requested properties
+        time_start_decode = time.perf_counter()
+        data['decoded_metar'] = data.apply(lambda row: self.decode_metar(row.metar, row.datetime), axis=1)
+        time_end_decode = time.perf_counter()
+        time_decode = time_end_decode - time_start_decode
+        data.drop(columns=['metar'], inplace=True) # remove raw METAR that has already been decoded
+        data.dropna(inplace=True) # remove non-decodable METAR rows
+        property_names = [str(property) for property in properties]
+        self.logger.debug(f'property-names: {property_names}')
+        time_start_unfold = time.perf_counter()
+        data[property_names] = data.apply(lambda x: self.unfoldMetar(x['decoded_metar'], properties), axis=1)
+        time_end_unfold = time.perf_counter()
+        time_unfold = time_end_unfold - time_start_unfold
+        data.drop(columns=['decoded_metar'], inplace=True) # remove decoded METAR that has already been unfolded
+
         printable_subset = data[['station', 'datetime']]
         self.logger.debug(f'Data queried (only station and datetime):\n{printable_subset}')
         time_end = time.perf_counter()
-        self.logger.info(f'Query took {time_end - time_start} seconds')
+        time_total = time_end - time_start
+        self.logger.info(
+            f'Query took {time_total:.6f} seconds in total.\n'
+            f'Decoding METAR took {time_decode:.6f} seconds, which is {100.0 * time_decode / time_total :.1f} % of total time.\n'
+            f'Unfolding METAR took {time_unfold:.6f} seconds, which is {100.0 * time_unfold / time_total :.1f} % of total time.'
+        )
         return data
