@@ -1,6 +1,10 @@
 metar:
   filepath: "data/METAR/asos.csv"
   download-url: "http://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?"
+  api-url: "https://mesonet.agron.iastate.edu/api/1/"
+  data-path: 'data/metar/'
+map:
+  data-path: 'data/map/'
 database:
   technology: "postgresql"
   name: "database"
