@@ -1,7 +1,8 @@
 from typing import List, Optional
-from aimlsse_api.data.metar import MetarProperty, MetarPropertyType
 
-from metar import Metar, Datatypes
+import numpy as np
+from aimlsse_api.data.metar import *
+from metar import Datatypes, Metar
 
 metar_library_mapping = {
     MetarPropertyType.METAR_CODE                  : 'code',
@@ -74,15 +75,55 @@ class MetarWrapper:
             The values of the requested properties
         '''
         return [self.__get_metar_attr(prop) for prop in properties]
-    
+
     def __get_metar_attr(self, property:MetarProperty):
         attribute = getattr(self.metar, metar_library_mapping[property.type])
-        if attribute is not None:
-            if isinstance(attribute, (Datatypes.distance, Datatypes.precipitation,
-                    Datatypes.pressure, Datatypes.speed, Datatypes.temperature)):
-                return attribute.value(property.unit)
-            elif isinstance(attribute, Datatypes.direction):
-                return attribute.value()
+        # Special handling for complex types first
+        if property.type == MetarPropertyType.RUNWAY_VISIBILITY:
+            # attribute = [entry0[value0, value1], entry1[value0, value1]]
+            return [DataRunwayVisibility(
+                str(entry[0]),
+                self.__parse_value(entry[1], property),
+                self.__parse_value(entry[2], property)
+            ) for entry in attribute]
+        if property.type == MetarPropertyType.CURRENT_WEATHER or property.type == MetarPropertyType.RECENT_WEATHER:
+            # attribute = [entry0[value0, value1], entry1[value0, value1]]
+            return [DataWeather(
+                entry[0],
+                entry[1],
+                entry[2],
+                entry[3],
+                entry[4]
+            ) for entry in attribute]
+        if property.type == MetarPropertyType.SKY_CONDITIONS:
+            # attribute = [entry0[value0, value1], entry1[value0, value1]]
+            return [DataSkyConditions(
+                entry[0],
+                self.__parse_value(entry[1], property),
+                entry[2]
+            ) for entry in attribute]
+        # Common handling for all other cases
+        if property.type.has_multiple_entries():
+            if property.type.uses_multiple_values():
+                # attribute = [entry0[value0, value1], entry1[value0, value1]]
+                return [[self.__parse_value(value, property) for value in entry] for entry in attribute]
             else:
-                return attribute
+                # attribute = [entry0, entry1]
+                return [self.__parse_value(entry, property) for entry in attribute]
+        elif property.type.uses_multiple_values():
+            # attribute = [value0, value1]
+            return [self.__parse_value(value, property) for value in attribute]
+        else:
+            # attribute = value
+            return self.__parse_value(attribute, property)
+    
+    def __parse_value(self, value, property:MetarProperty):
+        if value is not None:
+            if isinstance(value, (Datatypes.distance, Datatypes.precipitation,
+                    Datatypes.pressure, Datatypes.speed, Datatypes.temperature)):
+                return value.value(property.unit)
+            elif isinstance(value, Datatypes.direction):
+                return value.value()
+            else:
+                return value
         return None
