@@ -3,14 +3,16 @@ import logging
 from datetime import date
 from typing import List
 
+import pandas as pd
+import pycountry
+import shapely.wkt
 from aimlsse_api.data.metar import MetarProperty
 from aimlsse_api.interface import GroundDataAccess
 from fastapi import APIRouter, FastAPI
-from fastapi.responses import JSONResponse, Response, FileResponse
-import pandas as pd
-import pycountry
+from fastapi.responses import FileResponse, JSONResponse, Response
+from shapely import Polygon
 
-from . import IowaMetarDownloader, MetarDataProvider, StationControl, MetarMap
+from . import IowaMetarDownloader, MetarDataProvider, MetarMap, StationControl
 
 
 class GroundDataService(GroundDataAccess):
@@ -20,23 +22,52 @@ class GroundDataService(GroundDataAccess):
         # Setup a router for FastAPI
         self.router = APIRouter()
         self.router.add_api_route('/queryMetar', self.queryMetar, methods=['POST'])
-        self.router.add_api_route('/queryPosition', self.queryPosition, methods=['POST'])
+        self.router.add_api_route('/queryMetadata', self.queryMetadata, methods=['POST'])
         self.router.add_api_route('/getStationsInCountries', self.getStationsInCountries, methods=['POST'])
+        self.router.add_api_route('/getAllStations', self.getAllStations, methods=['GET'])
+        self.router.add_api_route('/forceRebuildMap', self.forceRebuildMap, methods=['GET'])
     
     async def queryMetar(self, data:dict, date_from:date, date_to:date):
-        self.validate_json_parameters(data, ['stations', 'properties'])
-        stations: List[str] = data['stations']
+        parameters_present = self.validate_json_parameters(data, [['stations', 'polygons'], ['properties']])
         property_strings: List[str] = data['properties']
         properties = [MetarProperty.from_string(prop_str) for prop_str in property_strings]
+        stations: List[str] = []
+        if 'stations' in parameters_present[0]:
+            stations += data['stations']
+            self.logger.info(f'Querying METAR for stations:\n{stations}')
+        elif 'polygons' in parameters_present[0]:
+            polygon_strings: List[str] = data['polygons']
+            polygons: List[Polygon] = [shapely.wkt.loads(x) for x in polygon_strings]
+            self.logger.info(f'Querying METAR for stations in polygons:\n{polygons}')
+            stations_gdf = MetarMap().get_stations_in_polygons(polygons)
+            stations += stations_gdf['id'].to_list()
+        else:
+            raise RuntimeError('Present parameter option not handled')
+        stations = sorted([*set(stations)]) # Remove duplicate stations
+        self.logger.info(f'Querying METAR for stations:\n{stations}')
         return JSONResponse(
-            json.loads(MetarDataProvider().query(stations, date_from, date_to, properties)
-                .to_json(date_format='iso'))
-        )
+                json.loads(MetarDataProvider().query(stations, date_from, date_to, properties)
+                    .to_json(date_format='iso'))
+            )
     
-    async def queryPosition(self, stations:List[str]):
-        sc = StationControl()
-        stations = sc.prepare_stations_for_processing(stations)
-        return JSONResponse(json.loads(sc.get_positional_data(stations).to_json()))
+    async def queryMetadata(self, data:dict):
+        parameters_present = self.validate_json_parameters(data, [['stations', 'polygons']])
+        metar_map = MetarMap()
+        stations: List[str] = []
+        if 'stations' in parameters_present[0]:
+            stations += data['stations']
+            self.logger.info(f'Querying metadata for stations:\n{stations}')
+        elif 'polygons' in parameters_present[0]:
+            polygon_strings: List[str] = data['polygons']
+            polygons: List[Polygon] = [shapely.wkt.loads(x) for x in polygon_strings]
+            self.logger.info(f'Querying metadata for stations in polygons:\n{polygons}')
+            stations_gdf = MetarMap().get_stations_in_polygons(polygons)
+            stations += stations_gdf['id'].to_list()
+        else:
+            raise RuntimeError('Present parameter option not handled')
+        stations = sorted([*set(stations)]) # Remove duplicate stations
+        self.logger.info(f'Querying metadata for stations:\n{stations}')
+        return JSONResponse(json.loads(metar_map.get_stations(stations).to_json()))
     
     async def getStationsInCountries(self, countries:List[str]):
         self.logger.info(f'Querying stations for countries:\n{countries}')
@@ -46,25 +77,47 @@ class GroundDataService(GroundDataAccess):
             json.loads(metar_map.get_stations_in_countries(country_codes).to_json())
         )
 
-    def validate_json_parameters(self, data:dict, parameters:List[str]) -> None:
+    async def getAllStations(self):
+        self.logger.info('Querying metadata for all stations..')
+        return JSONResponse(
+            json.loads(MetarMap().get_all_stations().to_json())
+        )
+
+    async def forceRebuildMap(self):
+        self.logger.info('Forcing rebuild of map data..')
+        MetarMap().force_rebuild()
+        return Response()
+
+    def validate_json_parameters(self, data:dict, parameters:List[List[str]]) -> List[List[str]]:
         '''
         Ensures that the given JSON dict contains the specified parameters.
+        Each entry in the parameters is a list of strings, where at least one must be present.
 
         Parameters
         ----------
         data: `JSON / dict`
             The JSON inside which the parameters are searched for
-        parameters: `List[str]`
+        parameters: `List[List[str]]`
             The parameters to search for inside the JSON
 
         Raises
         ------
         `ValueError`
             If a parameter is not contained in the data
+        
+        Returns
+        -------
+        `List[List[str]]`
+            All parameters that are present in the data
         '''
-        for param in parameters:
-            if param not in data:
-                raise ValueError(f'Missing information about "{param}" from received JSON data.')
+        parameters_present = []
+        for attributes in parameters:
+            attributes_present = list(filter(lambda x: x in data, attributes))
+            if len(attributes_present) == 0:
+                raise ValueError(f'Missing information about "{attributes}" from received JSON data.')
+            else:
+                parameters_present += [attributes_present]
+        return parameters_present
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('fiona').setLevel(logging.INFO)

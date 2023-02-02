@@ -1,17 +1,19 @@
 import logging
 import os
+import shutil
 from typing import Dict, List, Optional
 
 import geopandas as gpd
 import pandas as pd
 import pycountry
 import yaml
+from shapely import Polygon
 
 from . import IowaMetarDownloader
 
 
 class MetarMap:
-    stations_per_country: Dict[str, gpd.GeoDataFrame] = {}
+    stations: Optional[gpd.GeoDataFrame] = None
     countries: Optional[gpd.GeoDataFrame] = None
 
     def __init__(self) -> None:
@@ -24,39 +26,27 @@ class MetarMap:
         if MetarMap.countries is None:
             self.logger.info('Countries not in memory - loading..')
             MetarMap.countries = gpd.read_file('geo_data/countries.geojson')
-        return MetarMap.countries[['GU_A3', 'NAME', 'CONTINENT', 'geometry']]
+        return MetarMap.countries[['ISO_A3_EH', 'NAME', 'CONTINENT', 'geometry']]
     
-    def __get_stations(self, country_code:str):
-        if country_code not in MetarMap.stations_per_country:
-            self.__load(country_code)
-        return MetarMap.stations_per_country[country_code]
-
     def get_all_stations(self):
-        if not MetarMap.stations_per_country:
-            if os.path.exists(self.data_path):
-                filenames: List[str] = os.listdir(os.path.dirname(self.data_path))
-                if len(filenames) != 0:
-                    for filename in filenames:
-                        self.logger.debug(f'Filename: {filename}')
-                        country_code_alpha_3 = filename.split('_')[0]
-                        self.__load(country_code_alpha_3)
-                else:
-                    self.__build()
-            else:
-                self.__build()
-        data = [table for table in MetarMap.stations_per_country.values()]
-        return gpd.GeoDataFrame(pd.concat(data))
+        if MetarMap.stations is None:
+            self.__load()
+        return MetarMap.stations
 
-    def force_build(self):
+    def force_rebuild(self):
         self.__build()
 
     def __build(self):
         self.logger.info('Building Stations-per-Country dict..')
+        self.__delete_data()
+        self.logger.info('Querying stations..')
         stations: gpd.GeoDataFrame = IowaMetarDownloader().get_stations_for_all_networks()
+        stations.drop(['country'], axis=1, inplace=True) # Remove wrong country name
+        self.logger.info('Querying countries..')
         countries = self.__get_countries()
         self.logger.debug(f'Countries-CRS = {countries.crs}, Stations-CRS = {stations.crs}')
         assert countries.crs == stations.crs, 'GeoDataFrames for countries and stations have different CRS, which is not allowed'
-        countries = countries.rename(columns={'NAME':'corrected_country'})
+        countries = countries.rename(columns={'NAME':'country'})
         self.logger.info(f'Mapping {len(stations)} stations to {len(countries)} countries..')
         stations_in_countries: gpd.GeoDataFrame = stations.sjoin_nearest(countries, distance_col='distance_to_region')
         self.logger.info(f'Mapping resulted in {len(stations_in_countries)} stations')
@@ -66,44 +56,53 @@ class MetarMap:
             lost_stations_subset = lost_stations[['id', 'name']]
             self.logger.warning(f'The lost stations are:\n{lost_stations_subset.to_string()}')
             self.logger.warning(f'We lost {num_lost_stations} stations in the spatial join!')
-        # TODO - Make sure not-intersecting points are not dropped
-        MetarMap.stations_per_country = {key: table for key,table in stations_in_countries.groupby(['GU_A3'])}
+        MetarMap.stations = stations_in_countries
         self.logger.info(f'Mapping complete')
         self.__store()
     
-    def __get_filename(self, country_code:str):
-        return f'{country_code}_stations.geojson'
+    def __get_filename(self):
+        return f'stations.geojson'
+
+    def __delete_data(self):
+        self.logger.info('Removing data..')
+        os.makedirs(self.data_path, exist_ok=True)
+        for filename in os.listdir(os.path.dirname(self.data_path)):
+            file_path = os.path.join(self.data_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as exception:
+                self.logger.error(f'Unable to delete file {file_path}\n--> Problem: {exception}')
 
     def __store(self):
-        self.logger.info(f'Storing all mappings..')
+        self.logger.info(f'Storing all station mappings..')
         os.makedirs(self.data_path, exist_ok=True)
-        for country_code, table in MetarMap.stations_per_country.items():
-            filepath = os.path.join(self.data_path, self.__get_filename(country_code))
-            table.to_file(filepath)
+        filepath = os.path.join(self.data_path, self.__get_filename())
+        self.get_all_stations().to_file(filepath)
     
-    def __load(self, country_code:str):
-        self.logger.info(f'Loading mappings for country {pycountry.countries.get(alpha_3=country_code).name}..')
-        filepath = os.path.join(self.data_path, self.__get_filename(country_code))
+    def __load(self):
+        self.logger.info(f'Loading station mappings..')
+        filepath = os.path.join(self.data_path, self.__get_filename())
         if (not os.path.exists(self.data_path)) or (len(os.listdir(os.path.dirname(self.data_path))) == 0):
             # Directory does not exist or is empty - rebuild
             self.__build()
         elif os.path.exists(filepath):
             # File exists - load
-            MetarMap.stations_per_country[country_code] = gpd.read_file(filepath)
+            MetarMap.stations = gpd.read_file(filepath)
         else:
             # File does not exist but data is present
-            raise ValueError(f'Country-Code {country_code} does not relate to an existing country')
-
-    def get_stations_in_country(self, country_code:str) -> gpd.GeoDataFrame:
-        return self.__get_stations(country_code)
+            raise ValueError(f'Station mappings have not been built')
     
-    def get_stations_in_countries(self, country_codes:List[str]) -> gpd.GeoDataFrame:
-        data = [self.__get_stations(code) for code in country_codes]
+    def get_stations(self, stations:List[str]) -> gpd.GeoDataFrame:
+        data = self.get_all_stations()
+        return data[data['id'].isin(stations)]
+    
+    def get_stations_in_polygon(self, polygon:Polygon):
+        data = self.get_all_stations()
+        return data[data.within(polygon)]
+    
+    def get_stations_in_polygons(self, polygons:List[Polygon]):
+        data = [self.get_stations_in_polygon(x) for x in polygons]
         return gpd.GeoDataFrame(pd.concat(data))
-
-    def find_country_code(self, country_query:str) -> str:
-        try:
-            found_countries = pycountry.countries.search_fuzzy(country_query)
-        except LookupError:
-            raise ValueError(f'Could not find country {country_query}')
-        return found_countries[0].alpha_3
