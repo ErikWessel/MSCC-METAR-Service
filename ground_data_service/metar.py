@@ -146,9 +146,13 @@ class MetarDataProvider:
             date_diffs[station] = np.setdiff1d(query_date_range, dates)
         self.logger.debug(f'Date diffs: {date_diffs}')
 
+        # Note which stations are missing data
+        stations_with_missing_data: Dict[str, np.ndarray[np.datetime64]] = dict(
+            filter(lambda x: len(x[1]) > 0, date_diffs.items()))
+
         # Decision: Only download data for all stations to reduce number of remote-calls
         date_diffs_values = np.array([], dtype=np.datetime64)
-        for station, dates in date_diffs.items():
+        for station, dates in stations_with_missing_data.items():
             date_diffs_values = np.append(date_diffs_values, dates)
         unified_date_diffs = np.unique(date_diffs_values)
         self.logger.debug(f'Dates to query for all selected stations:\n{unified_date_diffs}')
@@ -168,13 +172,25 @@ class MetarDataProvider:
                 sleep_seconds = 5
                 self.logger.debug(f'Sleeping for {sleep_seconds} seconds to reduce load on server..')
                 time.sleep(sleep_seconds)
-                data = self.download_data(stations, chunk.start, chunk.end)
+                stations_to_query = list(stations_with_missing_data.keys())
+                data = self.download_data(stations_to_query, chunk.start, chunk.end)
                 printable_subset = data[['station', 'datetime']]
                 self.logger.debug(f'Data:\n{printable_subset}')
                 for station, dates in station_date_sets.items():
                     data = data.loc[~((data['station'] == station) & (data['datetime'].dt.date.isin(dates)))]
                 printable_subset = data[['station', 'datetime']]
                 self.logger.debug(f'Remaining data to store:\n{printable_subset}')
+                none_data_to_insert = []
+                for station, dates in stations_with_missing_data.items():
+                    dates_df = pd.DataFrame(dates, columns=['datetime'])
+                    dates_df['exists'] = dates_df['datetime'].isin(data.loc[data['station'] == station]['datetime'].dt.date)
+                    dates_df = dates_df.loc[~dates_df['exists']][['datetime']]
+                    self.logger.debug(f'Station {station} is missing data for dates {dates_df.datetime}')
+                    dates_df['station'] = station
+                    dates_df['metar'] = None
+                    none_data_to_insert += [dates_df]
+                data = pd.concat([data] + none_data_to_insert, ignore_index=True)
+                self.logger.debug(f'None will be inserted for:\n{data}')
                 self.store_data(data)
             self.logger.info(f'Data download complete!')
         else:
@@ -186,6 +202,7 @@ class MetarDataProvider:
 
         # Decode METAR and get requested properties
         time_start_decode = time.perf_counter()
+        data.dropna(subset=['metar'], inplace=True) # Get rid of None values from database
         data['decoded_metar'] = data.apply(lambda row: self.decode_metar(row.metar, row.datetime), axis=1)
         time_end_decode = time.perf_counter()
         time_decode = time_end_decode - time_start_decode
