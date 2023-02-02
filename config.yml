@@ -12,6 +12,3 @@ database:
   password: "password"
   host: "ground-db"
   port: 5432
-station-data:
-  filepath: "data/airports/airports.csv"
-  download-url: "https://davidmegginson.github.io/ourairports-data/airports.csv"

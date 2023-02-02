@@ -1,7 +1,7 @@
 import logging
 import os
 import shutil
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import pandas as pd
@@ -28,7 +28,7 @@ class MetarMap:
             MetarMap.countries = gpd.read_file('geo_data/countries.geojson')
         return MetarMap.countries[['ISO_A3_EH', 'NAME', 'CONTINENT', 'geometry']]
     
-    def get_all_stations(self):
+    def get_all_stations(self) -> gpd.GeoDataFrame:
         if MetarMap.stations is None:
             self.__load()
         return MetarMap.stations
@@ -99,10 +99,16 @@ class MetarMap:
         data = self.get_all_stations()
         return data[data['id'].isin(stations)]
     
-    def get_stations_in_polygon(self, polygon:Polygon):
+    def get_stations_in_polygon(self, polygon:Polygon) -> gpd.GeoDataFrame:
         data = self.get_all_stations()
         return data[data.within(polygon)]
     
-    def get_stations_in_polygons(self, polygons:List[Polygon]):
+    def get_stations_in_polygons(self, polygons:List[Polygon]) -> gpd.GeoDataFrame:
         data = [self.get_stations_in_polygon(x) for x in polygons]
         return gpd.GeoDataFrame(pd.concat(data))
+
+    def exists(self, stations:List[str]) -> Tuple[bool, List[bool]]:
+        data = self.get_all_stations()
+        stations_exist = zip(stations, pd.Series(stations).isin(data['id']).to_list())
+        nonexistent_stations = list(filter(lambda x: not x[1], stations_exist))
+        return (all(stations_exist), nonexistent_stations)
