@@ -25,22 +25,30 @@ class IowaMetarDownloader:
         self.data_path = os.path.join(metar_config['data-path'], 'iowa')
 
     def download(self, stations:List[str], date_from:date, date_to:date) -> pd.DataFrame:
-        # Prepare URL
-        self.logger.info(f'Downloading data for stations {stations}\n from {date_from} until {date_to}')
-        url = self.download_url + 'data=metar&tz=Etc%2FUTC&format=onlycomma'
-        url += '&latlon=no&elev=no&missing=M&trace=T&direct=yes&report_type=3&report_type=4'
-        url += date_from.strftime(  '&year1=%Y&month1=%m&day1=%d')
-        url += date_to.strftime(    '&year2=%Y&month2=%m&day2=%d')
-        url += '&station=' + '&station='.join(stations)
-        # Download data from URL
-        time_start = time.perf_counter()
-        download = requests.get(url)
-        time_end = time.perf_counter()
-        self.logger.info(f'Download took {time_start - time_end} seconds')
-        download.raise_for_status()
-        # Process and store data
-        data_io = StringIO(download.text)
-        return pd.read_csv(data_io)
+        chunk_size = 100
+        station_chunks = [stations[i:i + chunk_size] for i in range(0, len(stations), chunk_size)]
+        data_chunks = []
+        for partial_stations in station_chunks:
+            # Prepare URL
+            self.logger.info(f'Downloading data for stations {partial_stations}\n from {date_from} until {date_to}')
+            url = self.download_url + 'data=metar&tz=Etc%2FUTC&format=onlycomma'
+            url += '&latlon=no&elev=no&missing=M&trace=T&direct=yes&report_type=3&report_type=4'
+            url += date_from.strftime(  '&year1=%Y&month1=%m&day1=%d')
+            url += date_to.strftime(    '&year2=%Y&month2=%m&day2=%d')
+            url += '&station=' + '&station='.join(partial_stations)
+            # Download data from URL
+            time_start = time.perf_counter()
+            download = requests.get(url)
+            time_end = time.perf_counter()
+            self.logger.info(f'Download took {time_end - time_start:.6f} seconds')
+            download.raise_for_status()
+            # Process and store data
+            data_io = StringIO(download.text)
+            data_chunks += [pd.read_csv(data_io)]
+            if len(partial_stations) == chunk_size:
+                # Sleep between download calls
+                time.sleep(5)
+        return pd.concat(data_chunks, ignore_index=True).drop_duplicates(subset=['station', 'valid'])
 
     def get_networks(self) -> pd.DataFrame:
         '''
