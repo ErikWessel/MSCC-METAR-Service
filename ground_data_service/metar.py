@@ -175,11 +175,13 @@ class MetarDataProvider:
                 stations_to_query = list(stations_with_missing_data.keys())
                 data = self.download_data(stations_to_query, chunk.start, chunk.end)
                 printable_subset = data[['station', 'datetime']]
-                self.logger.debug(f'Data:\n{printable_subset}')
+                self.logger.debug('Data:\n'
+                    + data.to_string(None, columns=['station', 'datetime']))
                 for station, dates in station_date_sets.items():
                     data = data.loc[~((data['station'] == station) & (data['datetime'].dt.date.isin(dates)))]
                 printable_subset = data[['station', 'datetime']]
-                self.logger.debug(f'Remaining data to store:\n{printable_subset}')
+                self.logger.debug('Remaining data to store:\n'
+                    + data.to_string(None, columns=['station', 'datetime']))
                 none_data_to_insert = []
                 for station, dates in stations_with_missing_data.items():
                     dates_df = pd.DataFrame(dates, columns=['datetime'])
