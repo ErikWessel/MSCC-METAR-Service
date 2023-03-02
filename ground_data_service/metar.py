@@ -67,22 +67,21 @@ class MetarDataProvider:
         data['datetime'] = pd.to_datetime(data['datetime'])
         return data
     
-    def query_data(self, stations:List[str], date_from:date, date_to:date) -> pd.DataFrame:
-        self.logger.info(f'Querying data for stations {stations}\n from {date_from} until {date_to}')
+    def query_data(self, stations:List[str], datetime_from:datetime, datetime_to:datetime) -> pd.DataFrame:
+        self.logger.info(f'Querying data for stations {stations}\n from {datetime_from} until {datetime_to}')
         metar_data = None
         with orm.Session(self.db_engine) as session:
             stmt = (
                 db.select(MetarData.station, MetarData.datetime, MetarData.metar)
                 .where(MetarData.station.in_(stations))
-                .where(MetarData.datetime >= str(date_from))
-                .where(MetarData.datetime < str(date_to))
+                .where(MetarData.datetime >= str(datetime_from))
+                .where(MetarData.datetime < str(datetime_to))
                 .order_by(db.asc(MetarData.station), db.asc(MetarData.datetime))
             )
             metar_data: db.engine.result.ChunkedIteratorResult = session.execute(stmt)
         # Format output
         self.logger.debug(f'Queried METAR data type: {type(metar_data)}')
-        result = pd.DataFrame(metar_data.all())
-        result.columns = ['station', 'datetime', 'metar']
+        result = pd.DataFrame(metar_data.all(), columns=['station', 'datetime', 'metar'])
         self.logger.debug(f'Result of query:\n{result}')
         self.logger.info('Query for data of stations complete')
         return result
@@ -123,9 +122,13 @@ class MetarDataProvider:
     def unfoldMetar(self, metar:Metar.Metar, properties:List[MetarProperty]):
         return pd.Series(MetarWrapper(metar).get(properties))
 
-    def query(self, stations:List[str], date_from:date, date_to:date, properties:List[MetarProperty]) -> pd.DataFrame:
+    def query(self, stations:List[str], datetime_from:datetime, datetime_to:datetime,
+        properties:List[MetarProperty]) -> pd.DataFrame:
+
         time_start = time.perf_counter()
         stations = StationControl().prepare_stations_for_processing(stations)
+        date_from = datetime_from.date()
+        date_to = datetime_to.date()
         # Create index of what date-range is requested, to be able to use the difference() function
         if date_from == date_to - pd.DateOffset(days=1):
             # Only one day - can not be created with pandas.date_range - create manually
@@ -200,23 +203,29 @@ class MetarDataProvider:
 
         # Query the actual data
         self.logger.info(f'Querying data from database..')
-        data = self.query_data(stations, date_from, date_to)
+        data = self.query_data(stations, datetime_from, datetime_to)
 
         # Decode METAR and get requested properties
-        time_start_decode = time.perf_counter()
-        data.dropna(subset=['metar'], inplace=True) # Get rid of None values from database
-        data['decoded_metar'] = data.apply(lambda row: self.decode_metar(row.metar, row.datetime), axis=1)
-        time_end_decode = time.perf_counter()
-        time_decode = time_end_decode - time_start_decode
-        data.drop(columns=['metar'], inplace=True) # remove raw METAR that has already been decoded
-        data.dropna(inplace=True) # remove non-decodable METAR rows
         property_names = [str(property) for property in properties]
         self.logger.debug(f'property-names: {property_names}')
-        time_start_unfold = time.perf_counter()
-        data[property_names] = data.apply(lambda x: self.unfoldMetar(x['decoded_metar'], properties), axis=1)
-        time_end_unfold = time.perf_counter()
-        time_unfold = time_end_unfold - time_start_unfold
-        data.drop(columns=['decoded_metar'], inplace=True) # remove decoded METAR that has already been unfolded
+        data.dropna(subset=['metar'], inplace=True) # Get rid of None values from database
+        if data.empty:
+            data = pd.DataFrame(columns = data.columns.tolist() + property_names)
+            time_decode = 0.0
+            time_unfold = 0.0
+            data.drop(columns=['metar'], inplace=True)
+        else:
+            time_start_decode = time.perf_counter()
+            data['decoded_metar'] = data.apply(lambda row: self.decode_metar(row.metar, row.datetime), axis=1)
+            time_end_decode = time.perf_counter()
+            time_decode = time_end_decode - time_start_decode
+            data.drop(columns=['metar'], inplace=True) # remove raw METAR that has already been decoded
+            data.dropna(inplace=True) # remove non-decodable METAR rows
+            time_start_unfold = time.perf_counter()
+            data[property_names] = data.apply(lambda x: self.unfoldMetar(x['decoded_metar'], properties), axis=1)
+            time_end_unfold = time.perf_counter()
+            time_unfold = time_end_unfold - time_start_unfold
+            data.drop(columns=['decoded_metar'], inplace=True) # remove decoded METAR that has already been unfolded
 
         printable_subset = data[['station', 'datetime']]
         self.logger.debug(f'Data queried (only station and datetime):\n{printable_subset}')

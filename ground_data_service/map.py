@@ -90,7 +90,8 @@ class MetarMap:
             self.__build()
         elif os.path.exists(filepath):
             # File exists - load
-            MetarMap.stations = gpd.read_file(filepath)
+            MetarMap.stations: gpd.GeoDataFrame = gpd.read_file(filepath)
+            MetarMap.stations.drop_duplicates(subset=['id'], inplace=True)
         else:
             # File does not exist but data is present
             raise ValueError(f'Station mappings have not been built')

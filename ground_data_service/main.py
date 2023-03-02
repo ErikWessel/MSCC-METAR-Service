@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import List
 
 import pandas as pd
@@ -23,11 +23,10 @@ class GroundDataService(GroundDataAccess):
         self.router = APIRouter()
         self.router.add_api_route('/queryMetar', self.queryMetar, methods=['POST'])
         self.router.add_api_route('/queryMetadata', self.queryMetadata, methods=['POST'])
-        self.router.add_api_route('/getStationsInCountries', self.getStationsInCountries, methods=['POST'])
         self.router.add_api_route('/getAllStations', self.getAllStations, methods=['GET'])
         self.router.add_api_route('/forceRebuildMap', self.forceRebuildMap, methods=['GET'])
     
-    async def queryMetar(self, data:dict, date_from:date, date_to:date):
+    async def queryMetar(self, data:dict, datetime_from:datetime, datetime_to:datetime):
         parameters_present = self.validate_json_parameters(data, [['stations', 'polygons'], ['properties']])
         property_strings: List[str] = data['properties']
         properties = [MetarProperty.from_string(prop_str) for prop_str in property_strings]
@@ -46,8 +45,8 @@ class GroundDataService(GroundDataAccess):
         stations = sorted([*set(stations)]) # Remove duplicate stations
         self.logger.info(f'Querying METAR for stations:\n{stations}')
         return JSONResponse(
-                json.loads(MetarDataProvider().query(stations, date_from, date_to, properties)
-                    .to_json(date_format='iso'))
+                json.loads(MetarDataProvider().query(stations, datetime_from, datetime_to, properties)
+                    .to_json(date_format='iso', orient='table', index=False))
             )
     
     async def queryMetadata(self, data:dict):
@@ -68,14 +67,6 @@ class GroundDataService(GroundDataAccess):
         stations = sorted([*set(stations)]) # Remove duplicate stations
         self.logger.info(f'Querying metadata for stations:\n{stations}')
         return JSONResponse(json.loads(metar_map.get_stations(stations).to_json()))
-    
-    async def getStationsInCountries(self, countries:List[str]):
-        self.logger.info(f'Querying stations for countries:\n{countries}')
-        metar_map = MetarMap()
-        country_codes = [metar_map.find_country_code(country) for country in countries]
-        return JSONResponse(
-            json.loads(metar_map.get_stations_in_countries(country_codes).to_json())
-        )
 
     async def getAllStations(self):
         self.logger.info('Querying metadata for all stations..')
