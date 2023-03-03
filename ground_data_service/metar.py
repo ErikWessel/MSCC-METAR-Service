@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, List
 
 import numpy as np
@@ -128,9 +128,9 @@ class MetarDataProvider:
         time_start = time.perf_counter()
         stations = StationControl().prepare_stations_for_processing(stations)
         date_from = datetime_from.date()
-        date_to = datetime_to.date()
+        date_to = datetime_to.date() + timedelta(days=1)
         # Create index of what date-range is requested, to be able to use the difference() function
-        if date_from == date_to - pd.DateOffset(days=1):
+        if (date_to - date_from).days == 0:
             # Only one day - can not be created with pandas.date_range - create manually
             query_date_range = np.array([date_from], dtype='datetime64[D]')
         else:
@@ -139,7 +139,7 @@ class MetarDataProvider:
         self.logger.debug(f'Query date range: {query_date_range}')
 
         # Query what data is already available
-        self.logger.info(f'Checking what parts of the data are availble..')
+        self.logger.info(f'Checking what parts of the data are available..')
         station_date_sets = self.query_dates(stations, date_from, date_to) # does not work when date_from == date_to
         self.logger.debug(f'Station date sets: {station_date_sets}')
 
