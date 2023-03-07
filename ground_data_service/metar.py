@@ -172,7 +172,7 @@ class MetarDataProvider:
             self.logger.debug(f'Extended chunks:\n{chunks}')
             # Continue with download per chunk
             for chunk in chunks:
-                sleep_seconds = 5
+                sleep_seconds = 0.5
                 self.logger.debug(f'Sleeping for {sleep_seconds} seconds to reduce load on server..')
                 time.sleep(sleep_seconds)
                 stations_to_query = list(stations_with_missing_data.keys())

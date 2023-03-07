@@ -47,7 +47,7 @@ class IowaMetarDownloader:
             data_chunks += [pd.read_csv(data_io)]
             if len(partial_stations) == chunk_size:
                 # Sleep between download calls
-                time.sleep(5)
+                time.sleep(0.5)
         return pd.concat(data_chunks, ignore_index=True).drop_duplicates(subset=['station', 'valid'])
 
     def get_networks(self) -> pd.DataFrame:
@@ -113,7 +113,7 @@ class IowaMetarDownloader:
                     # Data is not available - download
                     os.makedirs(os.path.dirname(path), exist_ok=True)
                     logging.info(f'Information about stations in network {network} is not avaiable, downloading..')
-                    sleep_seconds = random.randint(3, 5)
+                    sleep_seconds = random.randint(1, 3)
                     self.logger.debug(f'Sleeping for {sleep_seconds} seconds to reduce load on server..')
                     time.sleep(sleep_seconds)
                     response = requests.get(network_url + filename)
