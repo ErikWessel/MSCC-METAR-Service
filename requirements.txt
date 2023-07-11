@@ -1,4 +1,4 @@
-aimlsse-api>=0.4.0
+aimlsse-api>=0.4.2
 fastapi>=0.88.0
 geopandas>=0.12.2
 metar>=1.9.0

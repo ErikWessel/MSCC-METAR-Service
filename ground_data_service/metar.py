@@ -11,7 +11,7 @@ import yaml
 from aimlsse_api.data.metar import *
 from metar import Metar
 
-from . import DateChunker, IowaMetarDownloader, StationControl, MetarWrapper
+from . import DateChunker, IowaMetarDownloader, MetarWrapper, StationControl
 
 
 class DatabaseConfig:

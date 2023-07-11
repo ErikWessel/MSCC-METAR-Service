@@ -1,14 +1,14 @@
 import json
 import logging
 from datetime import date, datetime
-from typing import List
+from typing import Annotated, List
 
 import pandas as pd
 import pycountry
 import shapely.wkt
 from aimlsse_api.data.metar import MetarProperty
 from aimlsse_api.interface import GroundDataAccess
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from shapely import Polygon
 
@@ -26,7 +26,16 @@ class GroundDataService(GroundDataAccess):
         self.router.add_api_route('/getAllStations', self.getAllStations, methods=['GET'])
         self.router.add_api_route('/forceRebuildMap', self.forceRebuildMap, methods=['GET'])
     
-    async def queryMetar(self, data:dict, datetime_from:datetime, datetime_to:datetime):
+    async def queryMetar(self, data:Annotated[dict, Body(
+            examples=[
+                {
+                    'stations': ['EDDF', 'EDDV', 'ELLX', 'LOWL']
+                },
+                {
+                    'polygons': ['POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'POLYGON ((0 0, 0 10, 10 10, 10 0))']
+                }
+            ]
+    )], datetime_from:datetime, datetime_to:datetime):
         parameters_present = self.validate_json_parameters(data, [['stations', 'polygons'], ['properties']])
         property_strings: List[str] = data['properties']
         properties = [MetarProperty.from_string(prop_str) for prop_str in property_strings]
@@ -41,7 +50,7 @@ class GroundDataService(GroundDataAccess):
             stations_gdf = MetarMap().get_stations_in_polygons(polygons)
             stations += stations_gdf['id'].to_list()
         else:
-            raise RuntimeError('Present parameter option not handled')
+            raise HTTPException(status_code=400, detail='Neither stations nor polygons are defined')
         stations = sorted([*set(stations)]) # Remove duplicate stations
         self.logger.info(f'Querying METAR for stations:\n{stations}')
         return JSONResponse(
@@ -49,7 +58,16 @@ class GroundDataService(GroundDataAccess):
                     .to_json(date_format='iso', orient='table', index=False))
             )
     
-    async def queryMetadata(self, data:dict):
+    async def queryMetadata(self, data:Annotated[dict, Body(
+            examples=[
+                {
+                    'stations': ['EDDF', 'EDDV', 'ELLX', 'LOWL']
+                },
+                {
+                    'polygons': ['POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'POLYGON ((0 0, 0 10, 10 10, 10 0))']
+                }
+            ]
+    )]):
         parameters_present = self.validate_json_parameters(data, [['stations', 'polygons']])
         metar_map = MetarMap()
         stations: List[str] = []
@@ -63,7 +81,7 @@ class GroundDataService(GroundDataAccess):
             stations_gdf = MetarMap().get_stations_in_polygons(polygons)
             stations += stations_gdf['id'].to_list()
         else:
-            raise RuntimeError('Present parameter option not handled')
+            raise HTTPException(status_code=400, detail='Neither stations nor polygons are defined')
         stations = sorted([*set(stations)]) # Remove duplicate stations
         self.logger.info(f'Querying metadata for stations:\n{stations}')
         return JSONResponse(json.loads(metar_map.get_stations(stations).to_json()))
@@ -105,7 +123,7 @@ class GroundDataService(GroundDataAccess):
         for attributes in parameters:
             attributes_present = list(filter(lambda x: x in data, attributes))
             if len(attributes_present) == 0:
-                raise ValueError(f'Missing information about "{attributes}" from received JSON data.')
+                raise HTTPException(status_code=400, detail=f'Missing information about "{attributes}" from received JSON data.')
             else:
                 parameters_present += [attributes_present]
         return parameters_present
