@@ -11,6 +11,7 @@ import geopandas as gpd
 import pandas as pd
 import requests
 import yaml
+import json
 
 
 class IowaMetarDownloader:
@@ -117,16 +118,31 @@ class IowaMetarDownloader:
                     self.logger.debug(f'Sleeping for {sleep_seconds} seconds to reduce load on server..')
                     time.sleep(sleep_seconds)
                     response = requests.get(network_url + filename)
-                    response.raise_for_status()
-                    with open(path, 'wb') as file:
-                        file.write(response.content)
-                    logging.info(f'Stations in network {network} download complete!')
-                    source = StringIO(response.text)
+                    try:
+                        response.raise_for_status()
+                        with open(path, 'wb') as file:
+                            file.write(response.content)
+                        logging.info(f'Stations in network {network} download complete!')
+                        source = StringIO(response.text)
+                    except requests.HTTPError as exc:
+                        errorCode = exc.response.status_code
+                        if errorCode == 404:
+                            logging.info(f'No stations in network {network}! Saving dummy file..')
+                            empty_feature_collection = {
+                                "type": "FeatureCollection",
+                                "features": []
+                            }
+                            with open(path, "w") as file:
+                                json.dump(empty_feature_collection, file, indent=4)
+                            logging.info(f"Empty FeatureCollection written to {path}")
+                        else:
+                            raise
                 # Read data from file or network-response
                 data = gpd.read_file(source)
-                IowaMetarDownloader.networks_to_stations[network] = data[[
-                        'id', 'name', 'plot_name', 'network', 'country', 'latitude', 'longitude', 'elevation', 'geometry'
-                    ]]
+                required_columns = ['id', 'name', 'plot_name', 'network', 'country', 'latitude', 'longitude', 'elevation', 'geometry']
+                if data.empty:
+                    data = gpd.GeoDataFrame(columns=required_columns)
+                IowaMetarDownloader.networks_to_stations[network] = data[required_columns]
         # Append GeoDataFrames and return result
         stations = [IowaMetarDownloader.networks_to_stations[network] for network in networks]
         return gpd.GeoDataFrame(pd.concat(stations))
